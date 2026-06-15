@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Family Calendar">
+<title>Family Calendar</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;background:#fff;color:#111}
+  body{display:flex;flex-direction:column;min-height:100vh}
+
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:0.5px solid #e0e0e0;position:sticky;top:0;background:#fff;z-index:10}
+  header h1{font-size:15px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:#111}
+  #auth-btn{font-size:12px;padding:5px 12px;border:0.5px solid #ccc;border-radius:6px;background:none;cursor:pointer;color:#111}
+  #auth-btn:hover{background:#f5f5f5}
+  #user-info{font-size:11px;color:#888}
+
+  .nav{display:flex;align-items:center;gap:0;padding:10px 16px;border-bottom:0.5px solid #e8e8e8}
+  .nav button{background:none;border:0.5px solid #ddd;padding:4px 12px;cursor:pointer;color:#111;font-size:14px;line-height:1}
+  .nav button:first-child{border-radius:6px 0 0 6px}
+  .nav button:last-child{border-radius:0 6px 6px 0}
+  .nav button:hover{background:#f5f5f5}
+  .week-label{flex:1;text-align:center;font-size:13px;font-weight:500;color:#111;letter-spacing:0.02em}
+
+  .table-wrap{overflow-x:auto;flex:1;padding:0 0 80px}
+  table{width:100%;border-collapse:collapse;table-layout:fixed;min-width:600px}
+  th,td{border:0.5px solid #e8e8e8;padding:4px 4px;text-align:center;vertical-align:middle}
+  th{background:#fafafa;font-weight:500;color:#666;font-size:10px;position:sticky;top:0}
+  td.row-head,th.row-head{text-align:left;font-weight:500;color:#111;background:#fafafa;white-space:nowrap;width:100px;font-size:11px;padding-left:8px;position:sticky;left:0;z-index:2}
+  th.row-head{z-index:3}
+  th.day-head .dow{font-weight:600;color:#111;display:block;font-size:11px}
+  th.day-head .date{font-weight:400;color:#999;font-size:10px;display:block;margin-top:1px}
+  th.day-head.today{background:#f0f4ff}
+  th.day-head.today .dow{color:#2a5bd7}
+  th.day-head.today .date{color:#2a5bd7}
+  td.today-col{background:#fafcff}
+
+  td select{width:100%;border:none;background:transparent;font-size:11px;color:#111;cursor:pointer;outline:none;padding:1px 0}
+  td select:focus{outline:1px solid #aac4ff;border-radius:3px}
+  .cell-stack{display:flex;flex-direction:column;gap:2px}
+  td.filled{background:#fffbea}
+
+  footer{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:0.5px solid #e0e0e0;padding:10px 16px;display:flex;align-items:center;gap:12px}
+  .save-btn{background:#111;color:#fff;border:none;border-radius:6px;padding:9px 20px;cursor:pointer;font-size:13px;font-weight:500;letter-spacing:0.02em}
+  .save-btn:hover{background:#333}
+  .save-btn:active{transform:scale(0.98)}
+  .save-btn:disabled{background:#ccc;cursor:default}
+  #status{font-size:12px;color:#888}
+  #status.ok{color:#2a7a2a}
+  #status.err{color:#c0392b}
+
+  .signin-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:16px;padding:40px}
+  .signin-screen h2{font-size:18px;font-weight:500;letter-spacing:0.05em}
+  .signin-screen p{font-size:13px;color:#666;text-align:center;max-width:280px;line-height:1.6}
+  .signin-big{background:#111;color:#fff;border:none;border-radius:8px;padding:12px 28px;cursor:pointer;font-size:14px;font-weight:500}
+  .signin-big:hover{background:#333}
+
+  #loading{text-align:center;padding:40px;font-size:13px;color:#999}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Family Calendar</h1>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="user-info"></span>
+    <button id="auth-btn" onclick="handleAuth()" style="display:none">Sign in</button>
+  </div>
+</header>
+
+<div id="app">
+  <div id="loading">Loading…</div>
+</div>
+
+<script>
+const CLIENT_ID = '133100297287-j8rs7b0slgs56s2hrtu9nfc01cgfa95b.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/calendar';
+const TAL_EMAIL = 'Taltula83@Gmail.com';
+const TZ = 'Europe/Amsterdam';
+
+const ROWS = [
+  {key:'office',     label:'Office',          type:'who3',       duration:0},
+  {key:'dropoff',    label:'Drop-Off',        type:'timed_who3', fixedTime:'08:10', duration:30},
+  {key:'pickup',     label:'Pick-Up',         type:'timed_who3', options:['15:00','17:30'], duration:30},
+  {key:'amit_sport', label:'Amit Sport',      type:'range',      start:8, end:19, step:60, duration:60},
+  {key:'tal_sport',  label:'Tal Sport',       type:'range',      start:8, end:19, step:60, duration:60},
+  {key:'tal_dutch',  label:'Tal Dutch',       type:'range',      start:8, end:19, step:30, duration:30},
+  {key:'danny_swim', label:'Danny Zwemles',   type:'range40',    startMin:480, endMin:1020, duration:40},
+  {key:'danny_play', label:'Danny Playdate',  type:'playdate',   friends:['Moa','Inaki','Eli'], duration:180},
+  {key:'ronny_play', label:'Ronny Playdate',  type:'playdate',   friends:['Max','Frida','Vivi','Ravie','Tijn'], duration:180},
+];
+
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const WHO3 = ['Amit','Tal','Both'];
+
+let tokenClient, accessToken;
+let weekOffset = 0;
+const cellData = {};
+
+function pad(n){return String(n).padStart(2,'0')}
+function fmt(d){return pad(d.getDate())+'/'+pad(d.getMonth()+1)}
+
+function getMonday(offset){
+  const d = new Date();
+  const day = d.getDay();
+  const diff = (day===0?-6:1-day)+offset*7;
+  d.setDate(d.getDate()+diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function isToday(d){
+  const t=new Date();
+  return d.getDate()===t.getDate()&&d.getMonth()===t.getMonth()&&d.getFullYear()===t.getFullYear();
+}
+
+function buildRange(startH,endH,stepMin){
+  const opts=[];
+  for(let m=startH*60;m<endH*60;m+=stepMin)
+    opts.push(pad(Math.floor(m/60))+':'+pad(m%60));
+  return opts;
+}
+
+function buildRange40(startMin,endMin){
+  const opts=[];
+  for(let m=startMin;m<=endMin;m+=40)
+    opts.push(pad(Math.floor(m/60))+':'+pad(m%60));
+  return opts;
+}
+
+function setVal(k,field,v){
+  if(!cellData[k]) cellData[k]={time:'',extra:''};
+  cellData[k][field]=v;
+  const td=document.getElementById('td_'+k);
+  if(td){
+    const hasVal=cellData[k].time||cellData[k].extra;
+    td.classList.toggle('filled',!!hasVal);
+  }
+}
+
+function whoSel(k,field,ph){
+  const cur=(cellData[k]||{})[field]||'';
+  let s=`<select onchange="setVal('${k}','${field}',this.value)"><option value="">${ph}</option>`;
+  WHO3.forEach(w=>s+=`<option value="${w}"${cur===w?' selected':''}>${w}</option>`);
+  return s+'</select>';
+}
+
+function timeSel(k,opts){
+  const cur=(cellData[k]||{}).time||'';
+  let s=`<select onchange="setVal('${k}','time',this.value)"><option value="">—</option>`;
+  opts.forEach(o=>s+=`<option value="${o}"${cur===o?' selected':''}>${o}</option>`);
+  return s+'</select>';
+}
+
+function mkCell(row,ci){
+  const k=row.key+'_'+ci;
+  if(!cellData[k]) cellData[k]={time:'',extra:''};
+
+  if(row.type==='who3') return whoSel(k,'extra','—');
+
+  if(row.type==='timed_who3'){
+    const timeEl=row.fixedTime
+      ?`<span style="font-size:11px;color:#999">${row.fixedTime}</span>`
+      :timeSel(k,row.options);
+    return `<div class="cell-stack">${timeEl}${whoSel(k,'extra','who—')}</div>`;
+  }
+
+  if(row.type==='range') return timeSel(k,buildRange(row.start,row.end,row.step));
+  if(row.type==='range40') return timeSel(k,buildRange40(row.startMin,row.endMin));
+
+  if(row.type==='playdate'){
+    const cur=(cellData[k]||{}).extra||'';
+    let friends=`<select onchange="setVal('${k}','extra',this.value)"><option value="">with—</option>`;
+    row.friends.forEach(f=>friends+=`<option value="${f}"${cur===f?' selected':''}>${f}</option>`);
+    return `<div class="cell-stack">${timeSel(k,Array.from({length:7},(_,i)=>pad(9+i)+':00'))}${friends}</select></div>`;
+  }
+  return '';
+}
+
+function renderGrid(){
+  const mon=getMonday(weekOffset);
+  const days=DAYS.map((_,i)=>{const d=new Date(mon);d.setDate(d.getDate()+i);return d;});
+
+  document.getElementById('week-label').textContent=fmt(days[0])+' – '+fmt(days[6]);
+
+  let thead='<tr><th class="row-head"></th>';
+  days.forEach((d,i)=>{
+    const cls=isToday(d)?'day-head today':'day-head';
+    thead+=`<th class="${cls}"><span class="dow">${DAYS[i]}</span><span class="date">${fmt(d)}</span></th>`;
+  });
+
+  let tbody='';
+  ROWS.forEach(row=>{
+    tbody+=`<tr><td class="row-head">${row.label}</td>`;
+    days.forEach((d,ci)=>{
+      const k=row.key+'_'+ci;
+      const hasVal=(cellData[k]||{}).time||(cellData[k]||{}).extra;
+      const todayCls=isToday(d)?' today-col':'';
+      const filledCls=hasVal?' filled':'';
+      tbody+=`<td id="td_${k}" class="${todayCls}${filledCls}">${mkCell(row,ci)}</td>`;
+    });
+    tbody+='</tr>';
+  });
+
+  document.getElementById('grid-head').innerHTML=thead+'</tr>';
+  document.getElementById('grid-body').innerHTML=tbody;
+}
+
+function localISO(dateObj,timeStr){
+  const [h,m]=timeStr.split(':').map(Number);
+  const d=new Date(dateObj);
+  d.setHours(h,m,0,0);
+  const off=-d.getTimezoneOffset();
+  const sign=off>=0?'+':'-';
+  const oh=pad(Math.floor(Math.abs(off)/60));
+  const om=pad(Math.abs(off)%60);
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(h)+':'+pad(m)+':00'+sign+oh+':'+om;
+}
+
+function endLocalISO(dateObj,timeStr,mins){
+  const [h,m]=timeStr.split(':').map(Number);
+  const d=new Date(dateObj);
+  d.setHours(h,m,0,0);
+  d.setMinutes(d.getMinutes()+mins);
+  const off=-d.getTimezoneOffset();
+  const sign=off>=0?'+':'-';
+  const oh=pad(Math.floor(Math.abs(off)/60));
+  const om=pad(Math.abs(off)%60);
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes())+':00'+sign+oh+':'+om;
+}
+
+function buildEvents(){
+  const mon=getMonday(weekOffset);
+  const days=DAYS.map((_,i)=>{const d=new Date(mon);d.setDate(d.getDate()+i);return d;});
+  const events=[];
+
+  ROWS.forEach(row=>{
+    days.forEach((day,ci)=>{
+      const k=row.key+'_'+ci;
+      const val=cellData[k]||{};
+
+      if(row.type==='who3'){
+        if(!val.extra) return;
+        const ds=day.getFullYear()+'-'+pad(day.getMonth()+1)+'-'+pad(day.getDate());
+        events.push({summary:`Office — ${val.extra}`, allDay:true, date:ds});
+        return;
+      }
+      if(row.type==='timed_who3'){
+        if(!val.extra) return;
+        const t=row.fixedTime||val.time;
+        if(!t) return;
+        events.push({summary:`${row.label} — ${val.extra}`, start:localISO(day,t), end:endLocalISO(day,t,row.duration)});
+        return;
+      }
+      if(row.type==='range'||row.type==='range40'){
+        if(!val.time) return;
+        events.push({summary:row.label, start:localISO(day,val.time), end:endLocalISO(day,val.time,row.duration)});
+        return;
+      }
+      if(row.type==='playdate'){
+        if(!val.time) return;
+        const friend=val.extra?` with ${val.extra}`:'';
+        events.push({summary:row.label+friend, start:localISO(day,val.time), end:endLocalISO(day,val.time,row.duration)});
+        return;
+      }
+    });
+  });
+  return events;
+}
+
+async function saveToCalendar(){
+  const events=buildEvents();
+  if(!events.length){
+    setStatus('Nothing to save — fill in at least one slot.','err');
+    return;
+  }
+
+  const btn=document.getElementById('save-btn');
+  btn.disabled=true;
+  setStatus('Saving…','');
+
+  let ok=0, fail=0;
+  for(const ev of events){
+    try{
+      const body=ev.allDay?{
+        summary:ev.summary,
+        colorId:'5',
+        start:{date:ev.date},
+        end:{date:ev.date},
+        attendees:[{email:TAL_EMAIL}],
+        reminders:{useDefault:false,overrides:[]},
+        guestsCanModify:false
+      }:{
+        summary:ev.summary,
+        colorId:'5',
+        start:{dateTime:ev.start,timeZone:TZ},
+        end:{dateTime:ev.end,timeZone:TZ},
+        attendees:[{email:TAL_EMAIL}],
+        reminders:{useDefault:false,overrides:[]},
+        sendUpdates:'all'
+      };
+
+      const res=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+accessToken,'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+      if(res.ok) ok++; else fail++;
+    } catch(e){ fail++; }
+  }
+
+  btn.disabled=false;
+  if(fail===0) setStatus(`✓ ${ok} event${ok>1?'s':''} saved — Tal has been invited.`,'ok');
+  else setStatus(`${ok} saved, ${fail} failed.`,'err');
+}
+
+function setStatus(msg,cls){
+  const el=document.getElementById('status');
+  el.textContent=msg;
+  el.className=cls;
+}
+
+function renderApp(){
+  document.getElementById('app').innerHTML=`
+    <div class="nav">
+      <button onclick="shiftWeek(-1)">&#8592;</button>
+      <span class="week-label" id="week-label"></span>
+      <button onclick="shiftWeek(1)">&#8594;</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead id="grid-head"></thead>
+        <tbody id="grid-body"></tbody>
+      </table>
+    </div>
+    <footer>
+      <button class="save-btn" id="save-btn" onclick="saveToCalendar()">Save to Google Calendar</button>
+      <span id="status"></span>
+    </footer>
+  `;
+  renderGrid();
+}
+
+function shiftWeek(d){weekOffset+=d;renderGrid();}
+
+function handleAuth(){
+  tokenClient.requestAccessToken();
+}
+
+function signOut(){
+  accessToken=null;
+  document.getElementById('user-info').textContent='';
+  document.getElementById('auth-btn').textContent='Sign in';
+  document.getElementById('auth-btn').onclick=handleAuth;
+  document.getElementById('app').innerHTML=`<div class="signin-screen"><h2>FAMILY CALENDAR</h2><p>Sign in with Google to view and save your weekly schedule.</p><button class="signin-big" onclick="handleAuth()">Sign in with Google</button></div>`;
+}
+
+window.onload=function(){
+  const script=document.createElement('script');
+  script.src='https://accounts.google.com/gsi/client';
+  script.onload=function(){
+    tokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID,
+      scope:SCOPES,
+      callback:(resp)=>{
+        if(resp.error) return;
+        accessToken=resp.access_token;
+        fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{'Authorization':'Bearer '+accessToken}})
+          .then(r=>r.json()).then(u=>{
+            document.getElementById('user-info').textContent=u.name||u.email;
+            document.getElementById('auth-btn').textContent='Sign out';
+            document.getElementById('auth-btn').onclick=signOut;
+            document.getElementById('auth-btn').style.display='';
+            renderApp();
+          });
+      }
+    });
+    document.getElementById('auth-btn').style.display='';
+    document.getElementById('loading').style.display='none';
+    document.getElementById('app').innerHTML=`<div class="signin-screen"><h2>FAMILY CALENDAR</h2><p>Sign in with Google to view and save your weekly schedule.</p><button class="signin-big" onclick="handleAuth()">Sign in with Google</button></div>`;
+  };
+  document.head.appendChild(script);
+};
+</script>
+</body>
+</html>
