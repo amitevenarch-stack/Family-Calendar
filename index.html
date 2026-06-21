@@ -95,10 +95,10 @@ const FRIEND_LISTS = {
 
 function loadFriends(key, defaults){
   try{ const s=localStorage.getItem('friends_'+key); return s?JSON.parse(s):defaults; }
-  catch(){ return defaults; }
+  catch(e){ return defaults; }
 }
 function saveFriends(key, list){
-  try{ localStorage.setItem('friends_'+key, JSON.stringify(list)); }catch(){}
+  try{ localStorage.setItem('friends_'+key, JSON.stringify(list)); }catch(e){}
 }
 
 const ROWS = [
