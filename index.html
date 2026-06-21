@@ -41,7 +41,12 @@
 
   td select{width:100%;border:none;background:transparent;font-size:11px;color:#111;cursor:pointer;outline:none;padding:1px 0}
   td select:focus{outline:1px solid #aac4ff;border-radius:3px}
+  td input[type=text]{width:100%;border:none;border-bottom:0.5px solid #ddd;background:transparent;font-size:11px;color:#111;outline:none;padding:1px 2px}
+  td input[type=text]::placeholder{color:#bbb}
+  td input[type=checkbox]{width:12px;height:12px;cursor:pointer;accent-color:#2a5bd7}
   .cell-stack{display:flex;flex-direction:column;gap:2px}
+  .add-name-row{display:flex;align-items:center;gap:3px;margin-top:1px}
+  .add-name-row label{font-size:9px;color:#aaa;white-space:nowrap}
   td.filled{background:#fffbea}
 
   footer{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:0.5px solid #e0e0e0;padding:10px 16px;display:flex;align-items:center;gap:12px}
@@ -82,6 +87,20 @@ const SCOPES = 'https://www.googleapis.com/auth/calendar';
 const TAL_EMAIL = 'Taltula83@Gmail.com';
 const TZ = 'Europe/Amsterdam';
 
+// Persistent friend lists (saved to localStorage)
+const FRIEND_LISTS = {
+  danny_play: loadFriends('danny_play', ['Moa','Inaki','Eli']),
+  ronny_play: loadFriends('ronny_play', ['Max','Frida','Vivi','Ravie','Tijn']),
+};
+
+function loadFriends(key, defaults){
+  try{ const s=localStorage.getItem('friends_'+key); return s?JSON.parse(s):defaults; }
+  catch(){ return defaults; }
+}
+function saveFriends(key, list){
+  try{ localStorage.setItem('friends_'+key, JSON.stringify(list)); }catch(){}
+}
+
 const ROWS = [
   {key:'office',     label:'Office',          type:'who3',       duration:0},
   {key:'dropoff',    label:'Drop-Off',        type:'timed_who3', fixedTime:'08:10', duration:30},
@@ -90,8 +109,9 @@ const ROWS = [
   {key:'tal_sport',  label:'Tal Sport',       type:'range',      start:8, end:19, step:60, duration:60},
   {key:'tal_dutch',  label:'Tal Dutch',       type:'range',      start:8, end:19, step:30, duration:30},
   {key:'danny_swim', label:'Danny Zwemles',   type:'range40',    startMin:480, endMin:1020, duration:40},
-  {key:'danny_play', label:'Danny Playdate',  type:'playdate',   friends:['Moa','Inaki','Eli'], duration:180},
-  {key:'ronny_play', label:'Ronny Playdate',  type:'playdate',   friends:['Max','Frida','Vivi','Ravie','Tijn'], duration:180},
+  {key:'danny_play', label:'Danny Playdate',  type:'playdate',   friendsKey:'danny_play', duration:180},
+  {key:'ronny_play', label:'Ronny Playdate',  type:'playdate',   friendsKey:'ronny_play', duration:180},
+  {key:'blank',      label:'Other',           type:'blank',      duration:0},
 ];
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -132,12 +152,18 @@ function buildRange40(startMin,endMin){
   return opts;
 }
 
+// Half-hourly time options 07:00–22:00
+function buildHalfHourly(){
+  return buildRange(7, 22, 30);
+}
+
 function setVal(k,field,v){
-  if(!cellData[k]) cellData[k]={time:'',extra:''};
+  if(!cellData[k]) cellData[k]={time:'',extra:'',endTime:'',title:''};
   cellData[k][field]=v;
   const td=document.getElementById('td_'+k);
   if(td){
-    const hasVal=cellData[k].time||cellData[k].extra;
+    const d=cellData[k];
+    const hasVal=d.time||d.extra||d.title;
     td.classList.toggle('filled',!!hasVal);
   }
 }
@@ -149,16 +175,38 @@ function whoSel(k,field,ph){
   return s+'</select>';
 }
 
-function timeSel(k,opts){
-  const cur=(cellData[k]||{}).time||'';
-  let s=`<select onchange="setVal('${k}','time',this.value)"><option value="">—</option>`;
+function timeSel(k,opts,field='time'){
+  const cur=(cellData[k]||{})[field]||'';
+  let s=`<select onchange="setVal('${k}','${field}',this.value)"><option value="">—</option>`;
   opts.forEach(o=>s+=`<option value="${o}"${cur===o?' selected':''}>${o}</option>`);
   return s+'</select>';
 }
 
+function addFriendFromCell(rowKey, cellKey){
+  const inp=document.getElementById('newinput_'+cellKey);
+  const chk=document.getElementById('newchk_'+cellKey);
+  if(!inp) return;
+  const name=inp.value.trim();
+  if(!name) return;
+  // Save permanently if checked
+  if(chk&&chk.checked){
+    if(!FRIEND_LISTS[rowKey].includes(name)){
+      FRIEND_LISTS[rowKey].push(name);
+      saveFriends(rowKey, FRIEND_LISTS[rowKey]);
+    }
+  }
+  setVal(cellKey,'extra',name);
+  inp.value='';
+  if(chk) chk.checked=false;
+  // Re-render just this cell
+  const td=document.getElementById('td_'+cellKey);
+  const row=ROWS.find(r=>r.key===rowKey);
+  if(td&&row) td.innerHTML=mkCell(row, parseInt(cellKey.split('_').pop()));
+}
+
 function mkCell(row,ci){
   const k=row.key+'_'+ci;
-  if(!cellData[k]) cellData[k]={time:'',extra:''};
+  if(!cellData[k]) cellData[k]={time:'',extra:'',endTime:'',title:''};
 
   if(row.type==='who3') return whoSel(k,'extra','—');
 
@@ -174,10 +222,32 @@ function mkCell(row,ci){
 
   if(row.type==='playdate'){
     const cur=(cellData[k]||{}).extra||'';
-    let friends=`<select onchange="setVal('${k}','extra',this.value)"><option value="">with—</option>`;
-    row.friends.forEach(f=>friends+=`<option value="${f}"${cur===f?' selected':''}>${f}</option>`);
-    return `<div class="cell-stack">${timeSel(k,Array.from({length:7},(_,i)=>pad(9+i)+':00'))}${friends}</select></div>`;
+    const friends=FRIEND_LISTS[row.friendsKey]||[];
+    let sel=`<select onchange="setVal('${k}','extra',this.value)"><option value="">with—</option>`;
+    friends.forEach(f=>sel+=`<option value="${f}"${cur===f?' selected':''}>${f}</option>`);
+    sel+='</select>';
+    const timeOpts=Array.from({length:15},(_,i)=>{ const m=9*60+i*30; return pad(Math.floor(m/60))+':'+pad(m%60); });
+    return `<div class="cell-stack">
+      ${timeSel(k,timeOpts)}
+      ${sel}
+      <div class="add-name-row">
+        <input type="text" id="newinput_${k}" placeholder="add name…" style="flex:1" onkeydown="if(event.key==='Enter')addFriendFromCell('${row.friendsKey}','${k}')">
+        <input type="checkbox" id="newchk_${k}" title="Save permanently">
+        <label for="newchk_${k}">save</label>
+      </div>
+    </div>`;
   }
+
+  if(row.type==='blank'){
+    const cur=cellData[k]||{};
+    const halfH=buildHalfHourly();
+    return `<div class="cell-stack">
+      <input type="text" placeholder="title…" value="${cur.title||''}" onchange="setVal('${k}','title',this.value)" oninput="setVal('${k}','title',this.value)">
+      ${timeSel(k,halfH,'time')}
+      ${timeSel(k,halfH,'endTime')}
+    </div>`;
+  }
+
   return '';
 }
 
@@ -198,7 +268,8 @@ function renderGrid(){
     tbody+=`<tr><td class="row-head">${row.label}</td>`;
     days.forEach((d,ci)=>{
       const k=row.key+'_'+ci;
-      const hasVal=(cellData[k]||{}).time||(cellData[k]||{}).extra;
+      const cd=cellData[k]||{};
+      const hasVal=cd.time||cd.extra||cd.title;
       const todayCls=isToday(d)?' today-col':'';
       const filledCls=hasVal?' filled':'';
       tbody+=`<td id="td_${k}" class="${todayCls}${filledCls}">${mkCell(row,ci)}</td>`;
@@ -267,6 +338,12 @@ function buildEvents(){
         events.push({summary:row.label+friend, start:localISO(day,val.time), end:endLocalISO(day,val.time,row.duration)});
         return;
       }
+      if(row.type==='blank'){
+        if(!val.title||!val.time) return;
+        const end=val.endTime?localISO(day,val.endTime):endLocalISO(day,val.time,30);
+        events.push({summary:val.title, start:localISO(day,val.time), end:end});
+        return;
+      }
     });
   });
   return events;
@@ -283,7 +360,7 @@ async function saveToCalendar(){
   btn.disabled=true;
   setStatus('Saving…','');
 
-  let ok=0, fail=0;
+  let ok=0, fail=0, lastErr='';
   for(const ev of events){
     try{
       const body=ev.allDay?{
@@ -309,13 +386,16 @@ async function saveToCalendar(){
         headers:{'Authorization':'Bearer '+accessToken,'Content-Type':'application/json'},
         body:JSON.stringify(body)
       });
-      if(res.ok) ok++; else fail++;
-    } catch(e){ fail++; }
+      if(res.ok){ ok++; } else {
+        fail++;
+        if(!lastErr){ try{ const j=await res.clone().json(); lastErr=`[${res.status}] ${j?.error?.message||res.statusText}`; }catch(e2){ lastErr=`HTTP ${res.status}`; } }
+      }
+    } catch(e){ fail++; if(!lastErr) lastErr=e.message; }
   }
 
   btn.disabled=false;
   if(fail===0) setStatus(`✓ ${ok} event${ok>1?'s':''} saved — Tal has been invited.`,'ok');
-  else setStatus(`${ok} saved, ${fail} failed.`,'err');
+  else setStatus(`${ok} saved, ${fail} failed. ${lastErr||''}`,'err');
 }
 
 function setStatus(msg,cls){
