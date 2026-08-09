@@ -381,7 +381,7 @@ async function saveToCalendar(){
         sendUpdates:'all'
       };
 
-      const res=await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all',{
+      const res=await fetch('https://www.googleapis.com/calendar/v3/calendars/2139bfc7d3b08744f7305945e62032b6ab11950271e90490f8ad32f97378e810%40group.calendar.google.com/events?sendUpdates=all',{
         method:'POST',
         headers:{'Authorization':'Bearer '+accessToken,'Content-Type':'application/json'},
         body:JSON.stringify(body)
