@@ -47,6 +47,7 @@
   .cell-stack{display:flex;flex-direction:column;gap:2px}
   .add-name-row{display:flex;align-items:center;gap:3px;margin-top:1px}
   .add-name-row label{font-size:9px;color:#aaa;white-space:nowrap}
+  .add-name-row select{flex:1}
   td.filled{background:#fffbea}
 
   footer{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:0.5px solid #e0e0e0;padding:10px 16px;display:flex;align-items:center;gap:12px}
@@ -105,17 +106,20 @@ const ROWS = [
   {key:'office',     label:'Office',          type:'who3',       duration:0},
   {key:'dropoff',    label:'Drop-Off',        type:'timed_who3', fixedTime:'08:10', duration:30},
   {key:'pickup',     label:'Pick-Up',         type:'timed_who3', options:['15:00','17:30'], duration:30},
-  {key:'amit_sport', label:'Amit Sport',      type:'range',      start:8, end:19, step:60, duration:60},
-  {key:'tal_sport',  label:'Tal Sport',       type:'range',      start:8, end:19, step:60, duration:60},
+  {key:'amit_sport', label:'Amit Sport',      type:'range',      start:7, end:19, step:60, duration:60},
+  {key:'tal_sport',  label:'Tal Sport',       type:'range',      start:7, end:19, step:60, duration:60},
   {key:'tal_dutch',  label:'Tal Dutch',       type:'range',      start:8, end:19, step:30, duration:30},
   {key:'danny_swim', label:'Danny Zwemles',   type:'range40',    startMin:480, endMin:1020, duration:40},
   {key:'danny_play', label:'Danny Playdate',  type:'playdate',   friendsKey:'danny_play', duration:180},
   {key:'ronny_play', label:'Ronny Playdate',  type:'playdate',   friendsKey:'ronny_play', duration:180},
+  {key:'cleaner',    label:'Cleaner',         type:'fromto',     duration:120},
+  {key:'babysitter', label:'Babysitter',      type:'fromto',     duration:180},
   {key:'blank',      label:'Other',           type:'blank',      duration:0},
 ];
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const WHO3 = ['Amit','Tal','Both'];
+const HOME_AWAY = ['Home','Away'];
 
 let tokenClient, accessToken;
 let weekOffset = 0;
@@ -158,21 +162,25 @@ function buildHalfHourly(){
 }
 
 function setVal(k,field,v){
-  if(!cellData[k]) cellData[k]={time:'',extra:'',endTime:'',title:''};
+  if(!cellData[k]) cellData[k]={time:'',extra:'',endTime:'',title:'',location:''};
   cellData[k][field]=v;
   const td=document.getElementById('td_'+k);
   if(td){
     const d=cellData[k];
-    const hasVal=d.time||d.extra||d.title;
+    const hasVal=d.time||d.extra||d.title||d.location||d.endTime;
     td.classList.toggle('filled',!!hasVal);
   }
 }
 
-function whoSel(k,field,ph){
+function listSel(k,field,ph,list){
   const cur=(cellData[k]||{})[field]||'';
   let s=`<select onchange="setVal('${k}','${field}',this.value)"><option value="">${ph}</option>`;
-  WHO3.forEach(w=>s+=`<option value="${w}"${cur===w?' selected':''}>${w}</option>`);
+  list.forEach(w=>s+=`<option value="${w}"${cur===w?' selected':''}>${w}</option>`);
   return s+'</select>';
+}
+
+function whoSel(k,field,ph){
+  return listSel(k,field,ph,WHO3);
 }
 
 function timeSel(k,opts,field='time'){
@@ -229,12 +237,21 @@ function mkCell(row,ci){
     const timeOpts=Array.from({length:15},(_,i)=>{ const m=9*60+i*30; return pad(Math.floor(m/60))+':'+pad(m%60); });
     return `<div class="cell-stack">
       ${timeSel(k,timeOpts)}
+      ${listSel(k,'location','where—',HOME_AWAY)}
       ${sel}
       <div class="add-name-row">
         <input type="text" id="newinput_${k}" placeholder="add name…" style="flex:1" onkeydown="if(event.key==='Enter')addFriendFromCell('${row.friendsKey}','${k}')">
         <input type="checkbox" id="newchk_${k}" title="Save permanently">
         <label for="newchk_${k}">save</label>
       </div>
+    </div>`;
+  }
+
+  if(row.type==='fromto'){
+    const halfH=buildHalfHourly();
+    return `<div class="cell-stack">
+      <div class="add-name-row"><label>from</label>${timeSel(k,halfH,'time')}</div>
+      <div class="add-name-row"><label>to</label>${timeSel(k,halfH,'endTime')}</div>
     </div>`;
   }
 
@@ -335,7 +352,14 @@ function buildEvents(){
       if(row.type==='playdate'){
         if(!val.time) return;
         const friend=val.extra?` with ${val.extra}`:'';
-        events.push({summary:row.label+friend, start:localISO(day,val.time), end:endLocalISO(day,val.time,row.duration)});
+        const loc=val.location?` (${val.location})`:'';
+        events.push({summary:row.label+friend+loc, start:localISO(day,val.time), end:endLocalISO(day,val.time,row.duration)});
+        return;
+      }
+      if(row.type==='fromto'){
+        if(!val.time) return;
+        const end=val.endTime?localISO(day,val.endTime):endLocalISO(day,val.time,row.duration);
+        events.push({summary:row.label, start:localISO(day,val.time), end:end});
         return;
       }
       if(row.type==='blank'){
