@@ -92,6 +92,7 @@ const TZ = 'Europe/Amsterdam';
 const FRIEND_LISTS = {
   danny_play: loadFriends('danny_play', ['Moa','Inaki','Eli']),
   ronny_play: loadFriends('ronny_play', ['Max','Frida','Vivi','Ravie','Tijn']),
+  babysitter_who: loadFriends('babysitter_who', ['Lina','Oona','Jona']),
 };
 
 function loadFriends(key, defaults){
@@ -113,7 +114,7 @@ const ROWS = [
   {key:'danny_play', label:'Danny Playdate',  type:'playdate',   friendsKey:'danny_play', duration:180},
   {key:'ronny_play', label:'Ronny Playdate',  type:'playdate',   friendsKey:'ronny_play', duration:180},
   {key:'cleaner',    label:'Cleaner',         type:'fromto',     duration:120},
-  {key:'babysitter', label:'Babysitter',      type:'fromto',     duration:180},
+  {key:'babysitter', label:'Babysitter',      type:'fromto_who', friendsKey:'babysitter_who', duration:180},
   {key:'blank',      label:'Other',           type:'blank',      duration:0},
 ];
 
@@ -192,23 +193,20 @@ function timeSel(k,opts,field='time'){
 
 function addFriendFromCell(rowKey, cellKey){
   const inp=document.getElementById('newinput_'+cellKey);
-  const chk=document.getElementById('newchk_'+cellKey);
   if(!inp) return;
   const name=inp.value.trim();
   if(!name) return;
-  // Save permanently if checked
-  if(chk&&chk.checked){
-    if(!FRIEND_LISTS[rowKey].includes(name)){
-      FRIEND_LISTS[rowKey].push(name);
-      saveFriends(rowKey, FRIEND_LISTS[rowKey]);
-    }
+  const row=ROWS.find(r=>r.key===rowKey);
+  const friendsKey=row?row.friendsKey:rowKey;
+  // Always save to the persistent list, alongside the existing names
+  if(!FRIEND_LISTS[friendsKey].includes(name)){
+    FRIEND_LISTS[friendsKey].push(name);
+    saveFriends(friendsKey, FRIEND_LISTS[friendsKey]);
   }
   setVal(cellKey,'extra',name);
   inp.value='';
-  if(chk) chk.checked=false;
   // Re-render just this cell
   const td=document.getElementById('td_'+cellKey);
-  const row=ROWS.find(r=>r.key===rowKey);
   if(td&&row) td.innerHTML=mkCell(row, parseInt(cellKey.split('_').pop()));
 }
 
@@ -240,9 +238,7 @@ function mkCell(row,ci){
       ${listSel(k,'location','where—',HOME_AWAY)}
       ${sel}
       <div class="add-name-row">
-        <input type="text" id="newinput_${k}" placeholder="add name…" style="flex:1" onkeydown="if(event.key==='Enter')addFriendFromCell('${row.friendsKey}','${k}')">
-        <input type="checkbox" id="newchk_${k}" title="Save permanently">
-        <label for="newchk_${k}">save</label>
+        <input type="text" id="newinput_${k}" placeholder="add name…" style="flex:1" onkeydown="if(event.key==='Enter')addFriendFromCell('${row.key}','${k}')">
       </div>
     </div>`;
   }
@@ -252,6 +248,23 @@ function mkCell(row,ci){
     return `<div class="cell-stack">
       <div class="add-name-row"><label>from</label>${timeSel(k,halfH,'time')}</div>
       <div class="add-name-row"><label>to</label>${timeSel(k,halfH,'endTime')}</div>
+    </div>`;
+  }
+
+  if(row.type==='fromto_who'){
+    const halfH=buildHalfHourly();
+    const cur=(cellData[k]||{}).extra||'';
+    const friends=FRIEND_LISTS[row.friendsKey]||[];
+    let whoSelHtml=`<select onchange="setVal('${k}','extra',this.value)"><option value="">who—</option>`;
+    friends.forEach(f=>whoSelHtml+=`<option value="${f}"${cur===f?' selected':''}>${f}</option>`);
+    whoSelHtml+='</select>';
+    return `<div class="cell-stack">
+      <div class="add-name-row"><label>from</label>${timeSel(k,halfH,'time')}</div>
+      <div class="add-name-row"><label>to</label>${timeSel(k,halfH,'endTime')}</div>
+      ${whoSelHtml}
+      <div class="add-name-row">
+        <input type="text" id="newinput_${k}" placeholder="add name…" style="flex:1" onkeydown="if(event.key==='Enter')addFriendFromCell('${row.key}','${k}')">
+      </div>
     </div>`;
   }
 
@@ -356,10 +369,11 @@ function buildEvents(){
         events.push({summary:row.label+friend+loc, start:localISO(day,val.time), end:endLocalISO(day,val.time,row.duration)});
         return;
       }
-      if(row.type==='fromto'){
+      if(row.type==='fromto'||row.type==='fromto_who'){
         if(!val.time) return;
         const end=val.endTime?localISO(day,val.endTime):endLocalISO(day,val.time,row.duration);
-        events.push({summary:row.label, start:localISO(day,val.time), end:end});
+        const who=val.extra?` — ${val.extra}`:'';
+        events.push({summary:row.label+who, start:localISO(day,val.time), end:end});
         return;
       }
       if(row.type==='blank'){
